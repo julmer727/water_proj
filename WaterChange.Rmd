@@ -1,0 +1,1685 @@
+---
+title: "Data Analysis"
+output:
+  pdf_document: default
+  html_document: default
+date: 'Last compiled: `r format(Sys.time(), "%B %d, %Y at %X")`'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, options(scipen = 999), tidy = TRUE)
+```
+
+```{r include = FALSE}
+# load packages
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(infer)
+library(lubridate)
+library(tidyr)
+library(ggplot2)
+library(skimr)
+library(purrr)
+library(broom)
+library(summarytools)
+library(moderndive)
+library(mblm)
+library(formattable)
+```
+
+
+```{r show_col_types = FALSE, include = FALSE}
+# read in data
+data1 <- read_csv("masterSpreadsheetGood.csv",show_col_types = FALSE)
+data2 <- read_csv("sumBraid_activeChannel.csv", show_col_types = FALSE)
+data2 <- data2[1:30,]
+```
+
+```{r include = FALSE}
+dataVar1 <- data1 %>% select(braidplain, noLake, normNetWater)
+dataVar2 <- data2 %>% select(-Braidplain, -normNetWater, -normNetTotal)
+dataVar3 <- data1 %>% select(slope)
+
+data <- data_frame(dataVar1, dataVar2, dataVar3)
+
+data <- data %>% rename(historicAvgBraids = `h-avg braids`, 
+                historicAvgTotalWidth = `h-avg total width (m)`, 
+                historicAvgBraidWidth = `h-avg width braid (m)`, 
+                historicAvgSumBraids = `h-avg sum braid (m)`, 
+                currentAvgBraids = `c-avg braids`,
+                currentAvgTotalWidth = `c-avg total width (m)`, 
+                currentAvgBraidWidth = `c-avg width braid (m)`, 
+                currentAvgSumBraids = `c-avg sum braid (m)`, 
+                historicPercWater = `h-sum brd norm active channel`, 
+                currentPercWater = `c-sum brd norm active channel`, 
+                changeAvgBraidWidth = `avg brd wid change`, 
+                changeAvgNumberOfBraids = `avg num brd change`, 
+                changeTotalWidth = `d-total width`, 
+                changeAvgSumBraidWidth = `d-avg sum braid`,
+                changePercWater = `d-sum brd norm active channel`) %>%
+                select(-normNetWater)
+```
+
+```{r include = FALSE}
+data$lake_factor <- factor(data$noLake, labels = c('Lake', 'No Lake'))
+
+sen <- function(..., weights = NULL) {
+  mblm::mblm(...)
+}
+```
+
+```{r include = FALSE}
+lakeData <- data %>% filter(lake_factor == "Lake")
+noLakeData <- data %>% filter(lake_factor == "No Lake")
+```
+
+
+```{r echo=FALSE}
+# Multiple Linear Regression Model 
+# percWater_model <- lm(changePercWater ~ slope + noLake + changeAvgBraidWidth 
+#                       + changeAvgSumBraidWidth + changeTotalWidth, data = data)
+# 
+# get_regression_table(percWater_model)
+```
+&nbsp; 
+
+# Summary Statistics
+
+```{r result = "asis", echo=FALSE}
+#skimData <- data %>% select(-braidplain) %>% group_by(noLake) %>% skim()
+
+dat <- data %>% select(-braidplain)
+```
+
+## Summary Stats for all Braidplains
+
+```{r result = "asis", echo=FALSE, message=FALSE}
+descStats <- data.frame(descr(dat, stats = c("mean", "sd", "min", "med", "max"), transpose = TRUE))
+format(round(descStats,3))
+```
+&nbsp; 
+
+\newpage
+
+## Summary Stats for 
+#### a) Lake Systems (noLake = 0) and b) No Lake Systems (noLake = 1)
+
+```{r result = "asis", echo=FALSE, message=FALSE}
+(statsByLake <- stby(
+  data = dat,
+  INDICES = dat$noLake, # by lake index
+  FUN = descr, # descriptive statistics
+  stats = c("mean", "sd", "min", "med", "max"), 
+  transpose = TRUE
+))
+```
+
+```{r result = "asis", include=FALSE, message=FALSE}
+# stats by lake
+statsLake <- data.frame(statsByLake[1])
+statsLake <- statsLake %>% 
+  rename(Mean = X0.Mean, Std.Dev = X0.Std.Dev, Min = X0.Min, 
+         Median = X0.Median, Max = X0.Max)
+statsLake
+```
+
+```{r result = "asis", include=FALSE, message=FALSE}
+# stats by no lake
+statsNoLake <- data.frame(statsByLake[2]) 
+statsNoLake <- statsNoLake %>% 
+  rename(Mean = X1.Mean, Std.Dev = X1.Std.Dev, Min = X1.Min, 
+         Median = X1.Median, Max = X1.Max)
+```
+&nbsp; 
+
+## Means by Lake
+```{r result = "asis", echo=FALSE, message=FALSE}
+lakeMeans <- statsLake %>% select(Mean)
+noLakeMeans <- statsNoLake %>% select(Mean)
+meansByLake <- data.frame(lakeMeans, noLakeMeans)
+meansByLake <- meansByLake %>% rename(lakeMeans = Mean, noLakeMeans = Mean.1)
+format(round(meansByLake, 3))
+```
+&nbsp; 
+
+## Medians by Lake
+```{r result = "asis", echo=FALSE, message=FALSE}
+lakeMeds <- statsLake %>% select(Median)
+noLakeMeds <- statsNoLake %>% select(Median)
+medsByLake <- data.frame(lakeMeds, noLakeMeds)
+medsByLake <- medsByLake %>% rename(lakeMeds = Median, noLakeMeds = Median.1)
+format(round(medsByLake,3))
+```
+
+&nbsp; 
+\newpage
+
+# Plots
+
+### Average Number of Braids
+&nbsp; 
+```{r, fig.show="hold", out.width="50%", echo = FALSE, message=FALSE}
+#par(mar = c(4, 4, .1, .1))
+
+data %>%
+  ggplot(aes(y = `currentAvgBraids`, fill = lake_factor)) +
+  geom_boxplot(show.legend = FALSE) +
+  labs(x = "Current Average Number of Braids") +
+  scale_fill_manual(values = c("lightsteelblue1", "lightgreen"))
+
+data %>%
+  ggplot(aes(x = `currentAvgBraids`, fill = lake_factor)) +
+  geom_histogram(show.legend = FALSE, color = "black", binwidth = 0.25) +
+  facet_wrap(~ `lake_factor`) + 
+  labs(x = "Current Average Number of Braids") + 
+  scale_fill_manual(values = c("lightsteelblue1", "lightgreen"))
+
+# bootstrap distribution
+avgBraids_boot_dist <- data %>% 
+  specify(response = currentAvgBraids) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+```
+&nbsp; 
+
+```{r, fig.show="hold", out.width="50%", echo = FALSE, message=FALSE}
+
+par(mar = c(4, 4, .1, .1))
+
+# bootstrap distribution
+lake_avgBraids_boot_dist <- lakeData %>% 
+  specify(response = currentAvgBraids) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+a1 <- mean(lake_avgBraids_boot_dist$stat)
+a1 <- format(round(a1, 2))
+
+# bootstrap distribution
+noLake_avgBraids_boot_dist <- noLakeData %>% 
+  specify(response = currentAvgBraids) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+b1 <- mean(noLake_avgBraids_boot_dist$stat)
+b1 <- format(round(b1, 2))
+
+# visualize bootstrap distribution boxplots
+ggplot(data = lake_avgBraids_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "lightsteelblue1") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Braids Lake")
+
+ggplot(data = noLake_avgBraids_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "lightgreen") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Braids No Lake")
+
+# visualize bootstrap distribution 
+ggplot(data = lake_avgBraids_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "lightsteelblue1", binwidth = 0.1) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Braids Lake", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red") + 
+  annotate("text",
+           x = 3,
+           y = 1500,
+           label = paste("Mean =", a1),
+           col = "red",
+           size = 5)
+ggplot(data = noLake_avgBraids_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "lightgreen", binwidth = 0.1) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Braids No Lake", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red") + 
+  annotate("text",
+           x = 3,
+           y = 900,
+           label = paste("Mean =", b1),
+           col = "red",
+           size = 5)
+```
+\newpage
+
+### Current Average Total Width
+&nbsp; 
+```{r, fig.show="hold", out.width="50%", echo = FALSE, message=FALSE}
+
+par(mar = c(4, 4, .1, .1))
+
+data %>%
+  ggplot(aes(y = `currentAvgTotalWidth`, fill = lake_factor)) +
+  geom_boxplot(show.legend = FALSE) +
+  labs(x = "Current Average Total Width") +
+  scale_fill_manual(values = c("lightsteelblue1", "lightgreen"))
+
+data %>%
+  ggplot(aes(x = `currentAvgTotalWidth`, fill = lake_factor)) +
+  geom_histogram(show.legend = FALSE, color="black", binwidth = 100) +
+  facet_wrap(~lake_factor) +
+  labs(x = "Current Average Total Width") +
+  scale_fill_manual(values = c("lightsteelblue1", "lightgreen"))
+
+# bootstrap distribution
+avgTotWidth_boot_dist <- data %>% 
+  specify(response = currentAvgTotalWidth) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+```
+&nbsp; 
+```{r, fig.show="hold", out.width="50%", echo = FALSE, message=FALSE}
+
+par(mar = c(4, 4, .1, .1))
+
+# bootstrap distribution
+lake_avgTotWidth_boot_dist <- lakeData %>% 
+  specify(response = currentAvgTotalWidth) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+a2 <- mean(lake_avgTotWidth_boot_dist$stat)
+a2 <- format(round(a2, 2))
+
+# bootstrap distribution
+noLake_avgTotWidth_boot_dist <- noLakeData %>% 
+  specify(response = currentAvgTotalWidth) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+b2 <- mean(noLake_avgTotWidth_boot_dist$stat)
+b2 <- format(round(b2, 2))
+
+# visualize bootstrap distribution boxplots
+ggplot(data = lake_avgTotWidth_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "lightsteelblue1") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Total Width Lake")
+
+ggplot(data = noLake_avgTotWidth_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "lightgreen") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Total Width No Lake")
+
+# visualize bootstrap distribution histograms
+ggplot(data = lake_avgTotWidth_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "lightsteelblue1", binwidth = 50) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Total Width Lake", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red") + 
+  annotate("text",
+           x = 900,
+           y = 900,
+           label = paste("Mean =", a2),
+           col = "red",
+           size = 5)
+
+ggplot(data = noLake_avgTotWidth_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "lightgreen", binwidth = 50) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Total Width No Lake", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red") + 
+  annotate("text",
+           x = 900,
+           y = 900,
+           label = paste("Mean =", b2),
+           col = "red",
+           size = 5)
+```
+\newpage
+
+### Current Average Braid Width
+&nbsp; 
+```{r, fig.show="hold", out.width="50%", echo = FALSE, message=FALSE}
+
+par(mar = c(4, 4, .1, .1))
+
+data %>%
+  ggplot(aes(y = `currentAvgBraidWidth`, fill = lake_factor)) +
+  geom_boxplot(show.legend = FALSE) +
+  facet_wrap(~ `lake_factor`) + 
+  labs(x = "Current Average Braid Width") +
+  scale_fill_manual(values = c("lightsteelblue1", "lightgreen"))
+
+data %>%
+  ggplot(aes(x = `currentAvgBraidWidth`, fill = lake_factor)) +
+  geom_histogram(show.legend = FALSE, color="black", binwidth = 25) +
+  facet_wrap(~lake_factor) +
+  labs(x = "Current Average Braid Width") +
+  scale_fill_manual(values = c("lightsteelblue1", "lightgreen"))
+
+# bootstrap distribution
+avgBraidWidth_boot_dist <- data %>% 
+  specify(response = currentAvgBraidWidth) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+```
+&nbsp; 
+
+```{r, fig.show="hold", out.width="50%", echo=FALSE, message=FALSE}
+
+par(mar = c(4, 4, .1, .1))
+
+# bootstrap distribution lake
+lake_avgBraidWidth_boot_dist <- lakeData %>% 
+  specify(response = currentAvgBraidWidth) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+a3 <- mean(lake_avgBraidWidth_boot_dist$stat)
+a3 <- format(round(a3, 2))
+
+# bootstrap distribution no lake
+noLake_avgBraidWidth_boot_dist <- noLakeData %>% 
+  specify(response = currentAvgBraidWidth) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+b3 <- mean(noLake_avgBraidWidth_boot_dist$stat)
+b3 <- format(round(b3, 2))
+
+# visualize bootstrap distribution boxplots
+ggplot(data = lake_avgBraidWidth_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "lightsteelblue1") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Braid Width Lake")
+
+ggplot(data = noLake_avgBraidWidth_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "lightgreen") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Braid Width No Lake")
+
+# visualize bootstrap distribution histograms
+ggplot(data = lake_avgBraidWidth_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "lightsteelblue1", binwidth = 1) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Braid Width Lake", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red") + 
+  annotate("text",
+           x = 100,
+           y = 500,
+           label = paste("Mean =", a3),
+           col = "red",
+           size = 5)
+
+ggplot(data = noLake_avgBraidWidth_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "lightgreen", binwidth = 1) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Braid Width No Lake", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red") + 
+  annotate("text",
+           x = 100,
+           y = 500,
+           label = paste("Mean =", b3),
+           col = "red",
+           size = 5)
+```
+\newpage
+
+### Current Average Sum Braid Width
+&nbsp; 
+```{r, fig.show="hold", out.width="50%", echo = FALSE, message=FALSE}
+
+par(mar = c(4, 4, .1, .1))
+
+data %>%
+  ggplot(aes(y = `currentAvgSumBraids`, fill = lake_factor)) +
+  geom_boxplot(show.legend = FALSE) +
+  facet_wrap(~ `lake_factor`) + 
+  labs(x = "Current Average Sum Braid Width") +
+  scale_fill_manual(values = c("lightsteelblue1", "lightgreen"))
+
+data %>%
+  ggplot(aes(x = `currentAvgSumBraids`, fill = lake_factor)) +
+  geom_histogram(show.legend = FALSE, color="black", binwidth = 50) +
+  facet_wrap(~lake_factor) +
+  labs(x = "Current Average Sum Braids") +
+  scale_fill_manual(values = c("lightsteelblue1", "lightgreen"))
+
+# bootstrap distribution
+avgSumBraids_boot_dist <- data %>% 
+  specify(response = currentAvgSumBraids) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+```
+&nbsp; 
+
+```{r, fig.show="hold", out.width="50%", echo=FALSE, message=FALSE}
+
+par(mar = c(4, 4, .1, .1))
+
+# bootstrap distribution
+lake_avgSumBraids_boot_dist <- lakeData %>% 
+  specify(response = currentAvgSumBraids) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+a4 <- mean(lake_avgSumBraids_boot_dist$stat)
+a4 <- format(round(a4, 2))
+
+# bootstrap distribution
+noLake_avgSumBraids_boot_dist <- noLakeData %>% 
+  specify(response = currentAvgSumBraids) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+b4 <- mean(noLake_avgSumBraids_boot_dist$stat)
+b4 <- format(round(b4, 2))
+
+# visualize bootstrap distribution boxplots
+ggplot(data = lake_avgSumBraids_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "lightsteelblue1") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Sum Braids Lake")
+
+ggplot(data = noLake_avgSumBraids_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "lightgreen") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Sum Braids No Lake")
+
+# visualize bootstrap distribution histograms
+ggplot(data = lake_avgSumBraids_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "lightsteelblue1", binwidth = 10) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Sum Braids Lake", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red") + 
+  annotate("text",
+           x = 300,
+           y = 1000,
+           label = paste("Mean =", a4),
+           col = "red",
+           size = 5)
+
+ggplot(data = noLake_avgSumBraids_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "lightgreen", binwidth = 10) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Sum Braids No Lake", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red") + 
+  annotate("text",
+           x = 300,
+           y = 900,
+           label = paste("Mean =", b4),
+           col = "red",
+           size = 5)
+```
+\newpage
+
+### Current Percent Surface Water
+&nbsp; 
+```{r, fig.show="hold", out.width="50%", echo = FALSE, message=FALSE}
+
+par(mar = c(4, 4, .1, .1))
+
+data %>%
+  ggplot(aes(y = `currentPercWater`, fill = lake_factor)) +
+  geom_boxplot(show.legend = FALSE) +
+  facet_wrap(~ `lake_factor`) + 
+  labs(x = "Current Percent Surface Water") +
+  scale_fill_manual(values = c("lightsteelblue1", "lightgreen"))
+
+data %>%
+  ggplot(aes(x = `currentPercWater`, fill = lake_factor)) +
+  geom_histogram(show.legend = FALSE, color="black", binwidth = 0.1) +
+  facet_wrap(~lake_factor) +
+  labs(x = "Current Percent Surface Water") +
+  scale_fill_manual(values = c("lightsteelblue1", "lightgreen"))
+
+# bootstrap distribution
+percWater_boot_dist <- data %>% 
+  specify(response = currentPercWater) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+```
+&nbsp; 
+
+```{r, fig.show="hold", out.width="50%", echo=FALSE, message=FALSE}
+
+par(mar = c(4, 4, .1, .1))
+
+# bootstrap distribution
+lake_percWater_boot_dist <- lakeData %>% 
+  specify(response = currentPercWater) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+a5 <- mean(lake_percWater_boot_dist$stat)
+a5 <- format(round(a5, 2))
+
+# bootstrap distribution
+noLake_percWater_boot_dist <- noLakeData %>% 
+  specify(response = currentPercWater) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+b5 <- mean(noLake_percWater_boot_dist$stat)
+b5 <- format(round(b5, 2))
+
+# visualize bootstrap distribution boxplots
+ggplot(data = lake_percWater_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "lightsteelblue1") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Current Percent Surface Water Lake")
+
+ggplot(data = noLake_percWater_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "lightgreen") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Current Percent Surface Water No Lake")
+
+# visualize bootstrap distribution histograms
+ggplot(data = lake_percWater_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "lightsteelblue1", binwidth = 0.025) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Current Percent Surface Water Lake", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red") + 
+  annotate("text",
+           x = 0.75,
+           y = 1500,
+           label = paste("Mean =", a5),
+           col = "red",
+           size = 5)
+
+ggplot(data = noLake_percWater_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "lightgreen", binwidth = 0.025) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Current Percent Surface Water No Lake", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red") + 
+  annotate("text",
+           x = 0.75,
+           y = 1000,
+           label = paste("Mean =", b5),
+           col = "red",
+           size = 5)
+```
+\newpage
+
+### Average Number of Braids
+```{r echo=FALSE, message=FALSE}
+# bootstrap distribution
+avgBraids_boot_diff <- data %>% 
+  specify(currentAvgBraids ~ lake_factor) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "diff in means", order= c("Lake", "No Lake"))
+
+# CI Percentile Method
+avgBraids_ci <- avgBraids_boot_diff %>%
+  summarize(
+    lower_ci = quantile(stat, 0.025),
+    upper_ci = quantile(stat, 0.975))
+
+# visualize bootstrap distribution 
+ggplot(data = avgBraids_boot_diff, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "thistle2", binwidth = 0.1) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Difference in Mean Avg Braids")+
+  geom_vline(data = avgBraids_ci, aes(xintercept = lower_ci), color = "red", lwd = 1, lty = "dashed") + 
+  geom_vline(data = avgBraids_ci, aes(xintercept = upper_ci), color = "red", lwd = 1, lty = "dashed") +
+  theme_bw()
+
+avgBraids_ci
+```
+&nbsp; 
+\newpage
+
+### Current Total Average Width
+```{r echo=FALSE, message=FALSE}
+# bootstrap distribution
+avgTotWidth_boot_diff <- data %>% 
+  specify(currentAvgTotalWidth ~ lake_factor) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "diff in means", order= c("Lake", "No Lake"))
+
+# CI Percentile Method
+avgTotWidth_ci <- avgTotWidth_boot_diff %>%
+  summarize(
+    lower_ci = quantile(stat, 0.025),
+    upper_ci = quantile(stat, 0.975))
+
+# visualize bootstrap distribution 
+ggplot(data = avgTotWidth_boot_diff, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "thistle2", binwidth = 100) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Difference in Mean Avg Total Width")+
+  geom_vline(data = avgTotWidth_ci, aes(xintercept = lower_ci), color = "red", lwd = 1, lty = "dashed") + 
+  geom_vline(data = avgTotWidth_ci, aes(xintercept = upper_ci), color = "red", lwd = 1, lty = "dashed") +
+  theme_bw()
+
+avgTotWidth_ci
+```
+&nbsp; 
+\newpage
+
+### Current Average Braid Width
+```{r echo=FALSE, message=FALSE}
+# bootstrap distribution
+avgBraidWidth_boot_diff <- data %>% 
+  specify(currentAvgBraidWidth ~ lake_factor) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "diff in means", order= c("Lake", "No Lake"))
+
+# CI Percentile Method
+avgBraidWidth_ci <- avgBraidWidth_boot_diff %>%
+  summarize(
+    lower_ci = quantile(stat, 0.025),
+    upper_ci = quantile(stat, 0.975))
+
+# visualize bootstrap distribution 
+ggplot(data = avgBraidWidth_boot_diff, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "thistle2", binwidth = 5) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Difference in Mean Avg Braid Width")+
+  geom_vline(data = avgBraidWidth_ci, aes(xintercept = lower_ci), color = "red", lwd = 1, lty = "dashed") + 
+  geom_vline(data = avgBraidWidth_ci, aes(xintercept = upper_ci), color = "red", lwd = 1, lty = "dashed") +
+  theme_bw()
+
+avgBraidWidth_ci
+```
+&nbsp; 
+\newpage
+
+### Current Average Sum Braid Width
+```{r echo=FALSE, message=FALSE}
+# bootstrap distribution
+avgSumBraids_boot_diff <- data %>% 
+  specify(currentAvgSumBraids ~ lake_factor) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "diff in means", order= c("Lake", "No Lake"))
+
+# CI Percentile Method
+avgSumBraids_ci <- avgSumBraids_boot_diff %>%
+  summarize(
+    lower_ci = quantile(stat, 0.025),
+    upper_ci = quantile(stat, 0.975))
+
+# visualize bootstrap distribution 
+ggplot(data = avgSumBraids_boot_diff, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "thistle2", binwidth = 10) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Difference in Mean Sum Braid Width")+
+  geom_vline(data = avgSumBraids_ci, aes(xintercept = lower_ci), color = "red", lwd = 1, lty = "dashed") + 
+  geom_vline(data = avgSumBraids_ci, aes(xintercept = upper_ci), color = "red", lwd = 1, lty = "dashed") +
+  theme_bw()
+
+avgSumBraids_ci
+```
+&nbsp; 
+\newpage
+
+### Current Percent Surface Water
+```{r echo=FALSE, message=FALSE}
+# bootstrap distribution
+percWater_boot_diff <- data %>% 
+  specify(currentPercWater ~ lake_factor) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "diff in means", order= c("Lake", "No Lake"))
+
+# CI Percentile Method
+percWater_ci <- percWater_boot_diff %>%
+  summarize(
+    lower_ci = quantile(stat, 0.025),
+    upper_ci = quantile(stat, 0.975))
+
+# visualize bootstrap distribution 
+ggplot(data = percWater_boot_diff, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "thistle2", binwidth = 0.1) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Difference in Mean Percent Surface Water")+
+  geom_vline(data = percWater_ci, aes(xintercept = lower_ci), color = "red", lwd = 1, lty = "dashed") + 
+  geom_vline(data = percWater_ci, aes(xintercept = upper_ci), color = "red", lwd = 1, lty = "dashed") +
+  theme_bw()
+
+percWater_ci
+```
+&nbsp; 
+
+\newpage
+## Bootstrap Interpretations
+
+After using bootstrapping to simulate 10000 samples, distributions for each of the above variables appear reasonably normal. Distributions are similar for systems with lakes and systems without. 95% confidence intervals of the difference in means for all variables contain zero, indicating that there is no statistically significant difference between systems with and without lakes.
+&nbsp; 
+
+### Average Number of Braids
+```{r, fig.show="hold", out.width="50%", echo=FALSE, message=FALSE}
+
+x1 <- mean(avgBraids_boot_dist$stat)
+x1 <- format(round(x1, 2))
+
+ggplot(data = avgBraids_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "thistle2") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Braids")
+
+ggplot(data = avgBraids_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "thistle2", binwidth = 0.1) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Braids", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red", linewidth = 1.25) + 
+  annotate("text",
+           x = 2.75,
+           y = 1500,
+           label = paste("Mean =", x1),
+           col = "red",
+           size = 5)
+```
+&nbsp; 
+
+### Average Total Width
+```{r, fig.show="hold", out.width="50%", echo=FALSE, message=FALSE}
+x2 <- mean(avgTotWidth_boot_dist$stat)
+x2 <- format(round(x2, 2))
+
+ggplot(data = avgTotWidth_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "thistle2") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Total Width")
+
+ggplot(data = avgTotWidth_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "thistle2", binwidth = 50) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Total Width", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red", linewidth = 1.5) + 
+  annotate("text",
+           x = 850,
+           y = 1250,
+           label = paste("Mean =", x2),
+           col = "red",
+           size = 5)
+```
+&nbsp; 
+
+### Average Braid Width
+```{r, fig.show="hold", out.width="50%", echo=FALSE, message=FALSE}
+x3 <- mean(avgBraidWidth_boot_dist$stat)
+x3 <- format(round(x3, 2))
+
+ggplot(data = avgBraidWidth_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "thistle2") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Braid Width")
+
+ggplot(data = avgBraidWidth_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "thistle2", binwidth = 1) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Braid Width", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red", linewidth = 1.25) + 
+  annotate("text",
+           x = 100,
+           y = 500,
+           label = paste("Mean =", x3),
+           col = "red",
+           size = 5)
+```
+&nbsp; 
+
+### Average Sum Braids
+```{r, fig.show="hold", out.width="50%", echo=FALSE, message=FALSE}
+x4 <- mean(avgSumBraids_boot_dist$stat)
+x4 <- format(round(x4, 2))
+
+ggplot(data = avgSumBraids_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "thistle2") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Sum Braids")
+
+ggplot(data = avgSumBraids_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "thistle2", binwidth = 10) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Avg Sum Braids", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red", linewidth = 1.25) + 
+  annotate("text",
+           x = 275,
+           y = 1000,
+           label = paste("Mean =", x4),
+           col = "red",
+           size = 5)
+```
+&nbsp; 
+
+### Current Percent Surface Water
+```{r, fig.show="hold", out.width="50%", echo=FALSE, message=FALSE}
+x5 <- mean(percWater_boot_dist$stat)
+x5 <- format(round(x5, 2))
+
+ggplot(data = percWater_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "thistle2") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Current Percent Surface Water")
+
+ggplot(data = percWater_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "thistle2", binwidth = 0.025) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Current Percent Surface Water", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red", linewidth = 1.25) + 
+  annotate("text",
+           x = 0.675,
+           y = 1500,
+           label = paste("Mean =", x5),
+           col = "red",
+           size = 5)
+
+```
+\newpage
+
+# Change
+
+### Change Average Number of Braids
+&nbsp; 
+```{r, fig.show="hold", out.width="50%", echo = FALSE, message=FALSE}
+
+par(mar = c(4, 4, .1, .1))
+
+data %>%
+  ggplot(aes(y = `changeAvgNumberOfBraids`, fill = lake_factor)) +
+  geom_boxplot(show.legend = FALSE) +
+  labs(x = "Change in Average Number of Braids") +
+  scale_fill_manual(values = c("lightsteelblue1", "lightgreen"))
+
+data %>%
+  ggplot(aes(x = `changeAvgNumberOfBraids`, fill = lake_factor)) +
+  geom_histogram(show.legend = FALSE, color = "black", binwidth = 0.25) +
+  facet_wrap(~ `lake_factor`) + 
+  labs(x = "Change in Average Number of Braids") + 
+  scale_fill_manual(values = c("lightsteelblue1", "lightgreen"))
+
+# bootstrap distribution
+changeBraids_boot_dist <- data %>% 
+  specify(response = changeAvgNumberOfBraids) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+```
+&nbsp; 
+
+```{r, fig.show="hold", out.width="50%", echo = FALSE, message=FALSE}
+
+par(mar = c(4, 4, .1, .1))
+
+# bootstrap distribution
+lake_changeBraids_boot_dist <- lakeData %>% 
+  specify(response = changeAvgNumberOfBraids) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+a6 <- mean(lake_changeBraids_boot_dist$stat)
+a6 <- format(round(a6, 2))
+
+# bootstrap distribution
+noLake_changeBraids_boot_dist <- noLakeData %>% 
+  specify(response = changeAvgNumberOfBraids) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+b6 <- mean(noLake_changeBraids_boot_dist$stat)
+b6 <- format(round(b6, 2))
+
+# visualize bootstrap distribution boxplots
+ggplot(data = lake_changeBraids_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "lightsteelblue1") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change Braids Lake")
+
+ggplot(data = noLake_changeBraids_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "lightgreen") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change Braids No Lake")
+
+# visualize bootstrap distribution 
+ggplot(data = lake_changeBraids_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "lightsteelblue1", binwidth = 0.1) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change Braids Lake", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red") + 
+  annotate("text",
+           x = 0,
+           y = 1500,
+           label = paste("Mean =", a6),
+           col = "red",
+           size = 5)
+ggplot(data = noLake_changeBraids_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "lightgreen", binwidth = 0.1) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change Braids No Lake", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red") + 
+  annotate("text",
+           x = 0,
+           y = 900,
+           label = paste("Mean =", b6),
+           col = "red",
+           size = 5)
+```
+\newpage
+
+### Change Average Total Width
+&nbsp; 
+```{r, fig.show="hold", out.width="50%", echo = FALSE, message=FALSE}
+
+par(mar = c(4, 4, .1, .1))
+
+data %>%
+  ggplot(aes(y = `changeTotalWidth`, fill = lake_factor)) +
+  geom_boxplot(show.legend = FALSE) +
+  labs(x = "Change Average Total Width") +
+  scale_fill_manual(values = c("lightsteelblue1", "lightgreen"))
+
+data %>%
+  ggplot(aes(x = `changeTotalWidth`, fill = lake_factor)) +
+  geom_histogram(show.legend = FALSE, color="black", binwidth = 100) +
+  facet_wrap(~lake_factor) +
+  labs(x = "Change Average Total Width") +
+  scale_fill_manual(values = c("lightsteelblue1", "lightgreen"))
+
+# bootstrap distribution
+changeTotWidth_boot_dist <- data %>% 
+  specify(response = changeTotalWidth) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+```
+&nbsp; 
+
+```{r, fig.show="hold", out.width="50%", echo = FALSE, message=FALSE}
+
+par(mar = c(4, 4, .1, .1))
+
+# bootstrap distribution
+lake_changeTotWidth_boot_dist <- lakeData %>% 
+  specify(response = changeTotalWidth) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+a7 <- mean(lake_changeTotWidth_boot_dist$stat)
+a7 <- format(round(a7, 2))
+
+# bootstrap distribution
+noLake_changeTotWidth_boot_dist <- noLakeData %>% 
+  specify(response = changeTotalWidth) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+b7 <- mean(noLake_changeTotWidth_boot_dist$stat)
+b7 <- format(round(b7, 2))
+
+# visualize bootstrap distribution boxplots
+ggplot(data = lake_changeTotWidth_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "lightsteelblue1") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change Total Width Lake")
+
+ggplot(data = noLake_changeTotWidth_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "lightgreen") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change Total Width No Lake")
+
+# visualize bootstrap distribution histograms
+ggplot(data = lake_changeTotWidth_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "lightsteelblue1", binwidth = 50) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change Total Width Lake", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red") + 
+  annotate("text",
+           x = -550,
+           y = 900,
+           label = paste("Mean =", a7),
+           col = "red",
+           size = 5)
+
+ggplot(data = noLake_changeTotWidth_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "lightgreen", binwidth = 50) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change Total Width No Lake", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red") + 
+  annotate("text",
+           x = -500,
+           y = 900,
+           label = paste("Mean =", b7),
+           col = "red",
+           size = 5)
+```
+\newpage
+
+### Change Average Braid Width
+&nbsp; 
+```{r, fig.show="hold", out.width="50%", echo = FALSE, message=FALSE}
+
+par(mar = c(4, 4, .1, .1))
+
+data %>%
+  ggplot(aes(y = `changeAvgBraidWidth`, fill = lake_factor)) +
+  geom_boxplot(show.legend = FALSE) +
+  facet_wrap(~ `lake_factor`) + 
+  labs(x = "Change Average Braid Width") +
+  scale_fill_manual(values = c("lightsteelblue1", "lightgreen"))
+
+data %>%
+  ggplot(aes(x = `changeAvgBraidWidth`, fill = lake_factor)) +
+  geom_histogram(show.legend = FALSE, color="black", binwidth = 25) +
+  facet_wrap(~lake_factor) +
+  labs(x = "Change Average Braid Width") +
+  scale_fill_manual(values = c("lightsteelblue1", "lightgreen"))
+
+# bootstrap distribution
+changeBraidWidth_boot_dist <- data %>% 
+  specify(response = changeAvgBraidWidth) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+```
+&nbsp; 
+
+```{r, fig.show="hold", out.width="50%", echo=FALSE, message=FALSE}
+
+par(mar = c(4, 4, .1, .1))
+
+# bootstrap distribution lake
+lake_changeBraidWidth_boot_dist <- lakeData %>% 
+  specify(response = changeAvgBraidWidth) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+a8 <- mean(lake_changeBraidWidth_boot_dist$stat)
+a8 <- format(round(a8, 2))
+
+# bootstrap distribution no lake
+noLake_changeBraidWidth_boot_dist <- noLakeData %>% 
+  specify(response = changeAvgBraidWidth) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+b8 <- mean(noLake_changeBraidWidth_boot_dist$stat)
+b8 <- format(round(b8, 2))
+
+# visualize bootstrap distribution boxplots
+ggplot(data = lake_changeBraidWidth_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "lightsteelblue1") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change Braid Width Lake")
+
+ggplot(data = noLake_changeBraidWidth_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "lightgreen") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change Braid Width No Lake")
+
+# visualize bootstrap distribution histograms
+ggplot(data = lake_changeBraidWidth_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "lightsteelblue1", binwidth = 1) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change Braid Width Lake", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red") + 
+  annotate("text",
+           x = 15,
+           y = 500,
+           label = paste("Mean =", a8),
+           col = "red",
+           size = 5)
+
+ggplot(data = noLake_changeBraidWidth_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "lightgreen", binwidth = 1) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change Braid Width No Lake", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red") + 
+  annotate("text",
+           x = 5,
+           y = 500,
+           label = paste("Mean =", b8),
+           col = "red",
+           size = 5)
+```
+\newpage
+
+### Change Average Sum Braid Width
+&nbsp; 
+```{r, fig.show="hold", out.width="50%", echo = FALSE, message=FALSE}
+
+par(mar = c(4, 4, .1, .1))
+
+data %>%
+  ggplot(aes(y = `changeAvgSumBraidWidth`, fill = lake_factor)) +
+  geom_boxplot(show.legend = FALSE) +
+  facet_wrap(~ `lake_factor`) + 
+  labs(x = "Change Average Sum Braid Width") +
+  scale_fill_manual(values = c("lightsteelblue1", "lightgreen"))
+
+data %>%
+  ggplot(aes(x = `changeAvgSumBraidWidth`, fill = lake_factor)) +
+  geom_histogram(show.legend = FALSE, color="black", binwidth = 50) +
+  facet_wrap(~lake_factor) +
+  labs(x = "Change Average Sum Braids") +
+  scale_fill_manual(values = c("lightsteelblue1", "lightgreen"))
+
+# bootstrap distribution
+changeSumBraids_boot_dist <- data %>% 
+  specify(response = changeAvgSumBraidWidth) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+```
+&nbsp; 
+
+```{r, figures-side4b, fig.show="hold", out.width="50%", echo=FALSE, message=FALSE}
+
+par(mar = c(4, 4, .1, .1))
+
+# bootstrap distribution
+lake_changeSumBraids_boot_dist <- lakeData %>% 
+  specify(response = changeAvgSumBraidWidth) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+a9 <- mean(lake_changeSumBraids_boot_dist$stat)
+a9 <- format(round(a9, 2))
+
+# bootstrap distribution
+noLake_changeSumBraids_boot_dist <- noLakeData %>% 
+  specify(response = changeAvgSumBraidWidth) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+b9 <- mean(noLake_changeSumBraids_boot_dist$stat)
+b9 <- format(round(b9, 2))
+
+# visualize bootstrap distribution boxplots
+ggplot(data = lake_changeSumBraids_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "lightsteelblue1") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change Sum Braids Lake")
+
+ggplot(data = noLake_changeSumBraids_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "lightgreen") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change Sum Braids No Lake")
+
+# visualize bootstrap distribution histograms
+ggplot(data = lake_changeSumBraids_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "lightsteelblue1", binwidth = 10) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change Sum Braids Lake", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red") + 
+  annotate("text",
+           x = 10,
+           y = 1000,
+           label = paste("Mean =", a9),
+           col = "red",
+           size = 5)
+
+ggplot(data = noLake_changeSumBraids_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "lightgreen", binwidth = 10) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change Sum Braids No Lake", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red") + 
+  annotate("text",
+           x = 10,
+           y = 900,
+           label = paste("Mean =", b9),
+           col = "red",
+           size = 5)
+```
+\newpage
+
+### Change Percent Surface Water
+&nbsp; 
+```{r, fig.show="hold", out.width="50%", echo = FALSE, message=FALSE}
+
+par(mar = c(4, 4, .1, .1))
+
+data %>%
+  ggplot(aes(y = `changePercWater`, fill = lake_factor)) +
+  geom_boxplot(show.legend = FALSE) +
+  facet_wrap(~ `lake_factor`) + 
+  labs(x = "Change Percent Surface Water") +
+  scale_fill_manual(values = c("lightsteelblue1", "lightgreen"))
+
+data %>%
+  ggplot(aes(x = `changePercWater`, fill = lake_factor)) +
+  geom_histogram(show.legend = FALSE, color="black", binwidth = 0.1) +
+  facet_wrap(~lake_factor) +
+  labs(x = "Change Percent Surface Water") +
+  scale_fill_manual(values = c("lightsteelblue1", "lightgreen"))
+
+# bootstrap distribution
+changePercWater_boot_dist <- data %>% 
+  specify(response = changePercWater) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+```
+&nbsp; 
+
+```{r, fig.show="hold", out.width="50%", echo=FALSE, message=FALSE}
+
+par(mar = c(4, 4, .1, .1))
+
+# bootstrap distribution
+lake_changePercWater_boot_dist <- lakeData %>% 
+  specify(response = changePercWater) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+a10 <- mean(lake_changePercWater_boot_dist$stat)
+a10 <- format(round(a10, 2))
+
+# bootstrap distribution
+noLake_changePercWater_boot_dist <- noLakeData %>% 
+  specify(response = changePercWater) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+b10 <- mean(noLake_changePercWater_boot_dist$stat)
+b10 <- format(round(b10, 2))
+
+# visualize bootstrap distribution boxplots
+ggplot(data = lake_changePercWater_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "lightsteelblue1") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change Percent Surface Water Lake")
+
+ggplot(data = noLake_changePercWater_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "lightgreen") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change Percent Surface Water No Lake")
+
+# visualize bootstrap distribution histograms
+ggplot(data = lake_changePercWater_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "lightsteelblue1", binwidth = 0.025) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change Percent Surface Water Lake", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red") + 
+  annotate("text",
+           x = 0.2,
+           y = 1500,
+           label = paste("Mean =", a10),
+           col = "red",
+           size = 5)
+
+ggplot(data = noLake_changePercWater_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "lightgreen", binwidth = 0.025) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change Percent Surface Water No Lake", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red") + 
+  annotate("text",
+           x = 0.2,
+           y = 1000,
+           label = paste("Mean =", b10),
+           col = "red",
+           size = 5)
+```
+\newpage
+
+### Change Number of Braids
+```{r echo=FALSE, message=FALSE}
+# bootstrap distribution
+changeBraids_boot_diff <- data %>% 
+  specify(changeAvgNumberOfBraids ~ lake_factor) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "diff in means", order= c("Lake", "No Lake"))
+
+# CI Percentile Method
+changeBraids_ci <- changeBraids_boot_diff %>%
+  summarize(
+    lower_ci = quantile(stat, 0.025),
+    upper_ci = quantile(stat, 0.975))
+
+# visualize bootstrap distribution 
+ggplot(data = changeBraids_boot_diff, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "thistle2", binwidth = 0.1) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Difference in Mean Change in Avg Braids")+
+  geom_vline(data = changeBraids_ci, aes(xintercept = lower_ci), color = "red", lwd = 1, lty = "dashed") + 
+  geom_vline(data = changeBraids_ci, aes(xintercept = upper_ci), color = "red", lwd = 1, lty = "dashed") +
+  theme_bw()
+
+avgBraids_ci
+```
+&nbsp; 
+\newpage
+
+### Change in Total Average Width
+```{r echo=FALSE, message=FALSE}
+# bootstrap distribution
+changeTotWidth_boot_diff <- data %>% 
+  specify(changeTotalWidth ~ lake_factor) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "diff in means", order= c("Lake", "No Lake"))
+
+# CI Percentile Method
+changeTotWidth_ci <- changeTotWidth_boot_diff %>%
+  summarize(
+    lower_ci = quantile(stat, 0.025),
+    upper_ci = quantile(stat, 0.975))
+
+# visualize bootstrap distribution 
+ggplot(data = changeTotWidth_boot_diff, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "thistle2", binwidth = 100) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Difference in Mean Change in Avg Total Width")+
+  geom_vline(data = avgTotWidth_ci, aes(xintercept = lower_ci), color = "red", lwd = 1, lty = "dashed") + 
+  geom_vline(data = avgTotWidth_ci, aes(xintercept = upper_ci), color = "red", lwd = 1, lty = "dashed") +
+  theme_bw()
+
+avgTotWidth_ci
+```
+&nbsp; 
+\newpage
+
+### Change Average Braid Width
+```{r echo=FALSE, message=FALSE}
+# bootstrap distribution
+changeBraidWidth_boot_diff <- data %>% 
+  specify(changeAvgBraidWidth ~ lake_factor) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "diff in means", order= c("Lake", "No Lake"))
+
+# CI Percentile Method
+changeBraidWidth_ci <- changeBraidWidth_boot_diff %>%
+  summarize(
+    lower_ci = quantile(stat, 0.025),
+    upper_ci = quantile(stat, 0.975))
+
+# visualize bootstrap distribution 
+ggplot(data = changeBraidWidth_boot_diff, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "thistle2", binwidth = 5) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Difference in Mean Avg Braid Width")+
+  geom_vline(data = changeBraidWidth_ci, aes(xintercept = lower_ci), color = "red", lwd = 1, lty = "dashed") + 
+  geom_vline(data = changeBraidWidth_ci, aes(xintercept = upper_ci), color = "red", lwd = 1, lty = "dashed") +
+  theme_bw()
+
+avgBraidWidth_ci
+```
+&nbsp; 
+\newpage
+
+### Current Average Sum Braid Width
+```{r echo=FALSE, message=FALSE}
+# bootstrap distribution
+changeSumBraids_boot_diff <- data %>% 
+  specify(changeAvgSumBraidWidth ~ lake_factor) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "diff in means", order= c("Lake", "No Lake"))
+
+# CI Percentile Method
+changeSumBraids_ci <- changeSumBraids_boot_diff %>%
+  summarize(
+    lower_ci = quantile(stat, 0.025),
+    upper_ci = quantile(stat, 0.975))
+
+# visualize bootstrap distribution 
+ggplot(data = changeSumBraids_boot_diff, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "thistle2", binwidth = 10) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Difference in Mean Change in Sum Braid Width")+
+  geom_vline(data = changeSumBraids_ci, aes(xintercept = lower_ci), color = "red", lwd = 1, lty = "dashed") + 
+  geom_vline(data = changeSumBraids_ci, aes(xintercept = upper_ci), color = "red", lwd = 1, lty = "dashed") +
+  theme_bw()
+
+avgSumBraids_ci
+```
+&nbsp; 
+\newpage
+
+### Change in Percent Surface Water
+```{r echo=FALSE, message=FALSE}
+# bootstrap distribution
+changePercWater_boot_diff <- data %>% 
+  specify(changePercWater ~ lake_factor) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "diff in means", order= c("Lake", "No Lake"))
+
+# CI Percentile Method
+changePercWater_ci <- changePercWater_boot_diff %>%
+  summarize(
+    lower_ci = quantile(stat, 0.025),
+    upper_ci = quantile(stat, 0.975))
+
+# visualize bootstrap distribution 
+ggplot(data = changePercWater_boot_diff, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "thistle2", binwidth = 0.1) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Difference in Mean Change in Percent Surface Water")+
+  geom_vline(data = changePercWater_ci, aes(xintercept = lower_ci), color = "red", lwd = 1, lty = "dashed") + 
+  geom_vline(data = changePercWater_ci, aes(xintercept = upper_ci), color = "red", lwd = 1, lty = "dashed") +
+  theme_bw()
+
+percWater_ci
+```
+&nbsp; 
+
+\newpage
+## Bootstrap Interpretations
+For change, 95% confidence intervals estimating the true difference in change between lake and no lake systems all contain zero, as before. This indicates that for change, as well, there is no statistically significant difference in change between systems with and without lakes for any variables measured above. 
+
+
+&nbsp; 
+
+### Change in Average Number of Braids
+```{r, fig.show="hold", out.width="50%", echo=FALSE, message=FALSE}
+
+x6 <- mean(changeBraids_boot_dist$stat)
+x6 <- format(round(x6, 2))
+
+ggplot(data = changeBraids_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "thistle2") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change in Avg Braids")
+
+ggplot(data = changeBraids_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "thistle2", binwidth = 0.1) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change in Avg Braids", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red", linewidth = 1.25) + 
+  annotate("text",
+           x = -0.25,
+           y = 1500,
+           label = paste("Mean =", x6),
+           col = "red",
+           size = 5)
+```
+&nbsp; 
+
+### Change in Average Total Width
+```{r, figures-side7, fig.show="hold", out.width="50%", echo=FALSE, message=FALSE}
+x7 <- mean(changeTotWidth_boot_dist$stat)
+x7 <- format(round(x7, 2))
+
+ggplot(data = changeTotWidth_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "thistle2") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change in Avg Total Width")
+
+ggplot(data = changeTotWidth_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "thistle2", binwidth = 50) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change in Avg Total Width", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red", linewidth = 1.5) + 
+  annotate("text",
+           x = -400,
+           y = 1250,
+           label = paste("Mean =", x7),
+           col = "red",
+           size = 5)
+```
+&nbsp; 
+
+### Change in Average Braid Width
+```{r, figures-side8, fig.show="hold", out.width="50%", echo=FALSE, message=FALSE}
+x8 <- mean(changeBraidWidth_boot_dist$stat)
+x8 <- format(round(x8, 2))
+
+ggplot(data = changeBraidWidth_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "thistle2") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change in Avg Braid Width")
+
+ggplot(data = changeBraidWidth_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "thistle2", binwidth = 1) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change in Avg Braid Width", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red", linewidth = 1.25) + 
+  annotate("text",
+           x = 10,
+           y = 500,
+           label = paste("Mean =", x8),
+           col = "red",
+           size = 5)
+```
+&nbsp; 
+
+### Change in Average Sum Braids
+```{r, figures-side9, fig.show="hold", out.width="50%", echo=FALSE, message=FALSE}
+x9 <- mean(changeSumBraids_boot_dist$stat)
+x9 <- format(round(x9, 2))
+
+ggplot(data = changeSumBraids_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "thistle2") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change in Avg Sum Braids")
+
+ggplot(data = changeSumBraids_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "thistle2", binwidth = 10) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change in Avg Sum Braids", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red", linewidth = 1.25) + 
+  annotate("text",
+           x = 0,
+           y = 1000,
+           label = paste("Mean =", x9),
+           col = "red",
+           size = 5)
+```
+&nbsp; 
+
+### Change in Percent Surface Water
+```{r, figures-side10, fig.show="hold", out.width="50%", echo=FALSE, message=FALSE}
+x10 <- mean(changePercWater_boot_dist$stat)
+x10 <- format(round(x10, 2))
+
+ggplot(data = changePercWater_boot_dist, aes(x = stat)) + 
+  geom_boxplot(fill = "thistle2") + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change in Percent Surface Water")
+
+ggplot(data = changePercWater_boot_dist, aes(x = stat)) + 
+  geom_histogram(color = "black", fill = "thistle2", binwidth = 0.025) + 
+  labs(title = "Bootstrap Distribution", 
+       x = "Change in Percent Surface Water", y = "count") + 
+  geom_vline(aes(xintercept = mean(stat)), color = "red", linewidth = 1.25) + 
+  annotate("text",
+           x = 0.2,
+           y = 1500,
+           label = paste("Mean =", x10),
+           col = "red",
+           size = 5)
+
+```
+\newpage
+
+
+
+```{r echo=FALSE, message=FALSE}
+data %>% 
+  ggplot(aes(currentAvgSumBraids, currentPercWater)) +   
+    geom_point(color = "black", shape = 21, size = 4, aes(fill = lake_factor)) +
+               scale_fill_manual(values = c("chartreuse", "cyan")) +
+    geom_smooth(method = sen) + 
+    labs(title = "Average Sum Braids vs Percent Water (Current)")
+```
+
+```{r include=FALSE, message=FALSE}
+mblm(currentPercWater ~ currentAvgSumBraids, data = data)
+```
+
+&nbsp; 
+
+- Greater sum braid width is associated with lower % surface water. This is likely because as the number of braids increases, the active channel width also increases, meaning there is more dry land area between braids and a lower % surface water overall. Trend is consistent with historic measurements. Increase of 1 m in sum braid width results in a decrease of 0.15% in surface water. 100 m increase in sum braid width results in a decrease of 15% surface water. This is also reasonably consistent with the changes seen. Average change in sum braid width was a decrease of roughly 47 m and average change in percent surface water was roughly a 6.5% increase. For lake systems, average sum braid width decreased by about 46 m and surface water increased by about 4%. For no lake systems, average sum braid width decreased by about 50m and surface water increased by about 10%. 
+- Intercept = 0.962244
+- Slope = -0.001543
+
+&nbsp; 
+
+```{r echo=FALSE, message=FALSE}
+data %>% 
+  ggplot(aes(historicAvgSumBraids, historicPercWater)) +   
+    geom_point(color = "black", shape = 21, size = 4, aes(fill = lake_factor)) +
+               scale_fill_manual(values = c("chartreuse", "cyan")) +
+    geom_smooth(method = sen) + 
+    labs(title = "Average Sum Braids vs Percent Water (Historic)")
+```
+
+```{r include=FALSE, message=FALSE}
+mblm(historicPercWater ~ historicAvgSumBraids, data = data)
+```
+
+&nbsp; 
+
+- Trend is consistent with "current" measurements. 
+- Intercept = 0.770277 
+- Slope = -0.001105
+
+&nbsp; 
+
+```{r echo=FALSE, message=FALSE}
+data %>% 
+  ggplot(aes(currentAvgBraids, currentAvgTotalWidth)) +   
+    geom_point(color = "black", shape = 21, size = 4, aes(fill = lake_factor)) +
+               scale_fill_manual(values = c("chartreuse", "cyan")) +
+    geom_smooth(method = sen) + 
+    labs(title = "Average Braids vs Average Total Width (Current)") 
+```
+
+```{r include=FALSE, message=FALSE}
+mblm(currentAvgTotalWidth ~ currentAvgBraids, data = data)
+```
+
+&nbsp; 
+
+- Generally, for both lake and no lake systems, higher average number of braids is associated with greater average active channel width. More braiding is associated with more space between braids, corresponding to a wider active channel overall. An increase of one braid will, on average, lead to an additional 245 m in active channel width. This is reasonably consistent with the changes seen. Average change in number of braids was -0.66 and average change in active channel width was -184.6 m. 
+- Intercept = -211.4
+- Slope = 245.0
+
+&nbsp; 
+
+```{r echo=FALSE, message=FALSE}
+data %>% 
+  ggplot(aes(currentAvgBraidWidth, currentAvgTotalWidth)) +   
+    geom_point(color = "black", shape = 21, size = 4, aes(fill = lake_factor)) +
+               scale_fill_manual(values = c("chartreuse", "cyan")) +
+    geom_smooth(method = sen) +
+    labs(title = "Average Braid Width vs Average Total Width (Current)")
+```
+
+```{r include=FALSE, message=FALSE}
+mblm(currentAvgTotalWidth ~ currentAvgBraidWidth, data = data)
+```
+
+&nbsp; 
+
+- Wider average braid width shows a weakly positive correlation with wider average total width. An increase in average braid width will, on average, result in an increase in average total width of 5.4 m. This is not consistent with change. Average change in braid width was -1.95 m and average change in total width was -185 m. This is likely because the change in number of braids is not considered here. 
+- Intercept -179.827
+- Slope = 5.361
+
+&nbsp; 
+
+```{r include=FALSE, message=FALSE}
+mblm(currentAvgBraidWidth ~ currentAvgBraids, data = data)
+```
+
+```{r echo=FALSE, message=FALSE}
+data %>% 
+  ggplot(aes(currentAvgBraids, currentAvgBraidWidth)) +   
+    geom_point(color = "black", shape = 21, size = 4, aes(fill = lake_factor)) +
+               scale_fill_manual(values = c("chartreuse", "cyan")) +
+    geom_smooth(method = sen) +
+    labs(title = "Average Braid Width vs Average Total Width (Current)")
+```
+
+&nbsp; 
+
+- An increase of one braid will, on average, result in an increase in average braid width of 7.08 m. Change in average number of braids is -0.66 and change in average braid width is -1.95 m. 
+- Intercept = 57.64
+- Slope = 7.08
+
+&nbsp; 
+
+
+
